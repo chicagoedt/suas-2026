@@ -1,6 +1,24 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from pathlib import Path
+
+def wait_for_windows_to_close(window_names, poll_ms=20):
+    while True:
+        key = cv2.waitKey(poll_ms) & 0xFF
+        if key in (27, ord("q")):
+            break
+
+        open_windows = 0
+        for name in window_names:
+            try:
+                if cv2.getWindowProperty(name, cv2.WND_PROP_VISIBLE) >= 1:
+                    open_windows += 1
+            except cv2.error:
+                continue
+
+        if open_windows == 0:
+            break
 
 # orders corners of ground control point
 # returns an array in order:
@@ -79,15 +97,15 @@ def draw_points(img, points, color=(255, 0, 0)):
                     1, (255,0,0), 2)
     return img
 
-def deskew_and_rotate_img(vertices, img, debug=False):
+def deskew_and_rotate_img(vertices, img, debug=False, debug_prefix="", shown_windows=None):
     src_pts = order_points(vertices)
     output_size = compute_output_size(src_pts)
 
     #  Draw ordered points
-    for i, p in enumerate(src_pts.astype(int)):
-        cv2.putText(img, str(i), tuple(p),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1, (255,0,0), 2)
+    # for i, p in enumerate(src_pts.astype(int)):
+    #     cv2.putText(img, str(i), tuple(p),
+    #                 cv2.FONT_HERSHEY_SIMPLEX,
+    #                 1, (255,0,0), 2)
 
 
     dst_pts = np.array([
@@ -108,6 +126,9 @@ def deskew_and_rotate_img(vertices, img, debug=False):
     if debug is True and deskewed_img is not None:
         print("deskewed_img is not None")
         cv2.imshow("Deskewed GCP", deskewed_img)
+        if shown_windows is not None:
+            shown_windows.add("Deskewed GCP")
+    cv2.imwrite(f"segmentation_debug/{debug_prefix}deskewed.jpg", deskewed_img)
 
     return rotate_img(deskewed_img, output_size)
 
@@ -119,6 +140,7 @@ def display_highlighted_img(img):
     )
 
     cv2.imshow("Highlighted", display_img)
+    return "Highlighted"
 
 def triangle_mask(shape, vertices):
     mask = np.zeros(shape, dtype=np.uint8)
@@ -142,12 +164,16 @@ def average_brightness_per_mask(channel, masks):
 
 def main():
 
+    filename = "unclear_test.jpg"
+    filename_stem = Path(filename).stem
+
     # ---------- Load model ----------
     model = YOLO("best.pt")
 
-    results = model("test2_upsidedown.jpg")
+    results = model(filename)
 
     for result in results:
+        shown_windows = set()
 
         if result.masks is None:
             continue
@@ -192,7 +218,7 @@ def main():
                 approx = cv2.approxPolyDP(contour, epsilon, True)
 
             # Draw simplified polygon
-            cv2.polylines(vis, [approx], True, (0, 255, 0), 2)
+            #cv2.polylines(vis, [approx], True, (0, 255, 0), 2)
 
             for pt in approx:
                 x, y = pt[0]
@@ -204,12 +230,22 @@ def main():
             # ---- Deskew + Rotate only GCP ----
             if class_name == "gcp" and len(approx) == 4:
 
-                rotated_gcp = deskew_and_rotate_img(approx, orig)
+                rotated_gcp = deskew_and_rotate_img(
+                    approx,
+                    orig,
+                    debug_prefix=f"{filename_stem}_",
+                    shown_windows=shown_windows,
+                )
+                cv2.imwrite(
+                    f"segmentation_debug/{filename_stem}_rotated_gcp.jpg",
+                    rotated_gcp
+                )
 
                 if rotated_gcp is None:
                     continue
                 
                 cv2.imshow("Rotated GCP", rotated_gcp)
+                shown_windows.add("Rotated GCP")
 
                 results2 = model(rotated_gcp)
 
@@ -219,9 +255,11 @@ def main():
                     for cls_id in r.boxes.cls:
                         print("Detected: " + model.names[int(cls_id)])
 
-        display_highlighted_img(vis)
+        highlighted_window = display_highlighted_img(vis)
+        shown_windows.add(highlighted_window)
 
-        cv2.waitKey(0)
+        wait_for_windows_to_close(shown_windows)
         cv2.destroyAllWindows()
+        cv2.waitKey(1)
 
 main()
