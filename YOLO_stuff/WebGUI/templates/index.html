@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Host Cursor Position</title>
+</head>
+
+<body>
+
+<h2>Host Cursor Position</h2>
+
+<div id="cursor" style = "color:blue;">
+    ex: 0
+    blah blah
+    wy: 0
+</div>
+
+<script>
+
+function updateCursor() {
+
+    fetch('/cursor')
+    .then(response => response.json())
+    .then(data => {
+
+        document.getElementById("cursor").innerText =
+            "ex: " + data.x + "blah" + "  wy: " + data.y;
+
+    });
+
+}
+
+// update 10 times per second
+setInterval(updateCursor, 100);
+
+</script>
+
+</body>
+</html>
